@@ -43,7 +43,7 @@
     <br>
     <a href="/login" class="link-offset-2 link-underline link-underline-opacity-0 fs-4">Have already account?</a>
 
-    <div id="error" style="color: red; display: none" class="alert alert-danger" role="alert">
+    <div id="error" style="color: red; display: none" class="alert alert-danger mt-2" role="alert">
 
     </div>
 
@@ -52,16 +52,18 @@
 <%- include('../templates/footer'); %>
 </body>
 <script>
-    const error = document.getElementById('error').value;
-    const username = document.getElementById('username').value;
-    const password = document.getElementById('password').value;
-    const password2 = document.getElementById('password2').value;
-    const email = document.getElementById('email').value;
+    const error = document.getElementById('error');
     const signUpBtn = document.getElementById('signUp');
 
     signUpBtn.addEventListener('click', async function () {
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+        const password2 = document.getElementById('password2').value;
+        const email = document.getElementById('email').value;
+
         if(username === '' || email === '' || password === '') {
             outputError('Please, fill out the fields');
+            console.log('Data:', username, email, password)
             return;
         }
 
@@ -71,23 +73,31 @@
             return;
         }
 
-        const response = await fetch('/register', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: username, email: email, password: password })
-        });
+        try {
+            const response = await fetch('/register', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ username, email, password }),
+                credentials: 'include' // Include cookies in the request
+            });
 
-        if(!response.ok) {
-            outputError('Sorry, error occured during registration: ' + response.statusMessage);
+            if (response.redirected) {
+                window.location.href = response.url;
+            } else if (!response.ok) {
+                const data = await response.json();
+                outputError(data.errorMessage || 'Registration failed')
+            }
+        } catch (error) {
+            outputError('An error occurred:', error);
         }
-    })
+    });
 
     function outputError(message){
         error.style.display = 'block';
         error.innerHTML = `<p>${message}</p>`;
-        setTimeout(function () {
-            error.style.display = 'block';
-        }, 15000);
+        setTimeout(error.style.display = 'block', 15000);
     }
 </script>
 </html>

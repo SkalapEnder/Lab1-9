@@ -1,6 +1,7 @@
 const express = require('express');
 const User = require('../models/User');
 const mongoose = require("mongoose");
+const bcrypt = require('bcryptjs');
 const router = express.Router();
 
 mongoose.connect('mongodb+srv://skalap2endra:kGOM7z5V54vBFdp1@cluster0.vannl.mongodb.net/lab1_9?retryWrites=true&w=majority&appName=Cluster0')
@@ -8,7 +9,7 @@ mongoose.connect('mongodb+srv://skalap2endra:kGOM7z5V54vBFdp1@cluster0.vannl.mon
     .catch((err) => console.error('Error connecting to MongoDB Atlas:', err));
 
 const authMiddleware = (req, res, next) => {
-    if (!req.session.userId) {
+    if (req.session.userId === undefined || req.session.userId === null) {
         return res.render('templates/error', {errorMessage: 'Unauthorized: Please log in'});
     }
     next();
@@ -20,14 +21,14 @@ router.get('/register', (req, res) => res.render('auth/registration'));
 router.post('/register', async (req, res) => {
     const { username, email, password } = req.body;
     try {
-        const existingUser = await User.findOne({username: username});
+        const existingUser = await User.findOne({email: email});
         if (existingUser !== null) {
-            return res.render('templates/error', {errorMessage: 'User already exists'});
+            return res.status(500).send({errorMessage: 'User already exists'});
         }
 
         const userId = await getNextFreeUserId();
         if (isNaN(userId)) {
-            return res.render('templates/error', {errorMessage: 'Failed to generate a valid user_id'});
+            return res.status(500).send({errorMessage: 'Failed to generate a valid user_id'});
         }
 
         const newUser = new User({
@@ -42,7 +43,7 @@ router.post('/register', async (req, res) => {
         await newUser.save();
         res.redirect('/login');
     } catch (err) {
-        return res.render('templates/error', {errorMessage:'Error registering user: ' + err.message});
+        return res.status(500).send({errorMessage:'Error registering user: ' + err.message});
     }
 });
 
@@ -52,10 +53,10 @@ router.get('/login', (req, res) => res.render('auth/login'));
 router.post('/login', async (req, res) => {
     const { email, password } = req.body;
     try {
-        const user = await User.findOne({email: email});
+        const user = await User.findOne({email: email}); //Fetch by email
 
         if (user === null || !(await bcrypt.compare(password, user.password))) {
-            return res.render('templates/error', {errorMessage: 'Invalid email or password'});
+            return res.status(500).send({errorMessage: 'Invalid email or password'});
         }
 
         req.session.userId = user.user_id;
@@ -63,7 +64,7 @@ router.post('/login', async (req, res) => {
         req.session.isLoggedIn = true;
         res.redirect('/');
     } catch (err) {
-        return res.render('templates/error', {errorMessage:'Error during login: ' + err.message});
+        return res.status(500).send({errorMessage:'Error during login: ' + err.message});
     }
 });
 
@@ -85,18 +86,17 @@ router.post('/update', authMiddleware, async (req, res) => {
             email: email
         };
 
-
         const updatedUser = await User.findOneAndUpdate(
             {user_id: user_id},
             {$set: updateData}
         );
         if (updatedUser === null) {
-            return res.render('templates/error', {errorMessage: 'Error updating user'});
+            return res.status(500).send({errorMessage: 'Error updating user'});
         }
         req.session.username = username;
         res.redirect('/profile');
     } catch (err) {
-        return res.render('templates/error', {errorMessage: 'Error updating user'});
+        return res.status(500).send({errorMessage: 'Error updating user'});
     }
 });
 
@@ -107,6 +107,31 @@ router.get('/profile', authMiddleware, async (req, res) => {
         return res.render('templates/error', {errorMessage: 'User not found'});
     }
     return res.render('profile/profile', {user});
+})
+
+router.get('/password', authMiddleware, async (req, res) => res.render('profile/password'))
+
+router.post('/password', authMiddleware, async (req, res) => {
+    const { oldPassword, password } = req.body;
+
+    try {
+        // Fetch user from database
+        const user = await getUser(req.session.userId);
+        if (user === null) {
+            return res.status(404).send({ errorMessage: 'User not found' });
+        }
+
+        if (!await bcrypt.compare(oldPassword, user.password)) {
+            return res.status(401).send({ errorMessage: 'Invalid old password' });
+        }
+
+        // Hash and save new password
+        user.password = password;
+        await user.save();
+        res.redirect('/profile')
+    } catch (err){
+        return res.status(500).send({errorMessage:'Error creating new password: ', err});
+    }
 })
 
 // LOG OUT part
@@ -128,7 +153,7 @@ router.get('/delete-account', authMiddleware, async (req, res) => {
         if (deletedUser === null) {
             return res.render('templates/error', {errorMessage: 'User not found or not deleted'});
         }
-
+        res.clearCookie('connect.sid'); // Clear the session cookie
         req.session.destroy();
         res.redirect('/');
     } catch (err) {
@@ -151,7 +176,6 @@ async function getNextFreeUserId() {
         }
         return parseInt(lastUser.user_id + 1);
     } catch (err) {
-        console.error('Error retrieving next free user_id:', err.message);
         throw new Error('Failed to retrieve next free user ID');
     }
 }

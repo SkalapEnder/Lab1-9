@@ -36,7 +36,7 @@ app.use((req, res, next) => {
 
 const authMiddleware = (req, res, next) => {
     if (req.session.userId === undefined || req.session.userId === null) {
-        return res.status(401).send('Unauthorized: Please log in');
+        return res.redirect('/login');
     }
     next();
 };
